@@ -1,0 +1,129 @@
+diff --git a/ext/coverage/coverage.c b/ext/coverage/coverage.c
+index 529fac2..31b6662 100644
+--- a/ext/coverage/coverage.c
++++ b/ext/coverage/coverage.c
+@@ -27,8 +27,10 @@ rb_coverage_start(VALUE klass)
+ 	    rb_coverages = rb_hash_new();
+ 	    RBASIC(rb_coverages)->klass = 0;
+ 	}
+-	rb_set_coverages(rb_coverages);
+     }
++
++    rb_set_coverages(rb_coverages);
++
+     return Qnil;
+ }
+ 
+@@ -39,7 +41,6 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+     VALUE coverage = (VALUE)val;
+     VALUE coverages = (VALUE)h;
+     coverage = rb_ary_dup(coverage);
+-    rb_ary_clear((VALUE)val);
+     rb_ary_freeze(coverage);
+     rb_hash_aset(coverages, path, coverage);
+     return ST_CONTINUE;
+@@ -53,16 +54,31 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+  * and disables coverage measurement.
+  */
+ static VALUE
+-rb_coverage_result(VALUE klass)
++rb_coverage_result(int argc, VALUE *argv)
+ {
+-    VALUE coverages = rb_get_coverages();
+-    VALUE ncoverages = rb_hash_new();
++    VALUE options;
++    VALUE coverages;
++    VALUE ncoverages;
++    int retain;
++
++    retain = 0;
++    rb_scan_args(argc, argv, "01", &options);
++
++    if (!NIL_P(options)) {
++        Check_Type(options, T_HASH);
++        if (rb_hash_aref(options, ID2SYM(rb_intern("retain"))) == Qtrue) {
++            retain = 1;
++        }
++    }
++
++    coverages = rb_get_coverages();
++    ncoverages = rb_hash_new();
+     if (!RTEST(coverages)) {
+ 	rb_raise(rb_eRuntimeError, "coverage measurement is not enabled");
+     }
+     st_foreach(RHASH_TBL(coverages), coverage_result_i, ncoverages);
+     rb_hash_freeze(ncoverages);
+-    rb_reset_coverages();
++    rb_reset_coverages(retain);
+     return ncoverages;
+ }
+ 
+@@ -102,6 +118,6 @@ Init_coverage(void)
+ {
+     VALUE rb_mCoverage = rb_define_module("Coverage");
+     rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, 0);
+-    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, 0);
++    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, -1);
+     rb_gc_register_address(&rb_coverages);
+ }
+diff --git a/iseq.c b/iseq.c
+index 721277a..42272aa 100644
+--- a/iseq.c
++++ b/iseq.c
+@@ -276,7 +276,7 @@ prepare_iseq_build(rb_iseq_t *iseq,
+     iseq->coverage = Qfalse;
+     if (!GET_THREAD()->parse_in_eval) {
+ 	VALUE coverages = rb_get_coverages();
+-	if (RTEST(coverages)) {
++	if (GET_VM()->coverage_enabled && RTEST(coverages)) {
+ 	    iseq->coverage = rb_hash_lookup(coverages, filename);
+ 	    if (NIL_P(iseq->coverage)) iseq->coverage = Qfalse;
+ 	}
+diff --git a/thread.c b/thread.c
+index 5b8bc5f..88cb232 100644
+--- a/thread.c
++++ b/thread.c
+@@ -4847,13 +4847,20 @@ void
+ rb_set_coverages(VALUE coverages)
+ {
+     GET_VM()->coverages = coverages;
++    GET_VM()->coverage_enabled = 1;
+     rb_add_event_hook(update_coverage, RUBY_EVENT_COVERAGE, Qnil);
+ }
+ 
+ void
+-rb_reset_coverages(void)
++rb_reset_coverages(int retain)
+ {
+-    GET_VM()->coverages = Qfalse;
++    if (retain) {
++        clear_coverage();
++    } else {
++        GET_VM()->coverages = Qfalse;
++    }
++
++    GET_VM()->coverage_enabled = 0;
+     rb_remove_event_hook(update_coverage);
+ }
+ 
+diff --git a/vm_core.h b/vm_core.h
+index dfc0e3c..5d3cf32 100644
+--- a/vm_core.h
++++ b/vm_core.h
+@@ -315,6 +315,7 @@ typedef struct rb_vm_struct {
+ 
+     VALUE verbose, debug, progname;
+     VALUE coverages;
++    int coverage_enabled;
+ 
+     struct unlinked_method_entry_list_entry *unlinked_method_entry_list;
+ 
+@@ -754,7 +755,7 @@ int rb_thread_check_trap_pending(void);
+ 
+ extern VALUE rb_get_coverages(void);
+ extern void rb_set_coverages(VALUE);
+-extern void rb_reset_coverages(void);
++extern void rb_reset_coverages(int);
+ 
+ #if defined __GNUC__ && __GNUC__ >= 4
+ #pragma GCC visibility pop
