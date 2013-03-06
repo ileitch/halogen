@@ -1,5 +1,5 @@
 module Halogen
-  module Rails
+  module RailsFilter
     def self.included(base)
       return unless Halogen.enabled
 

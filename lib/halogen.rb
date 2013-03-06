@@ -6,6 +6,11 @@ require 'halogen/dispatcher'
 require 'halogen/dispatcher/resque'
 require 'halogen/dispatcher/thread'
 
+if defined? Rails
+  require 'halogen/railtie'
+  require 'halogen/rails_filter'
+end
+
 module Halogen
   attr_accessor :enabled
 
