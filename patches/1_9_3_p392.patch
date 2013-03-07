@@ -1,5 +1,5 @@
 diff --git a/ext/coverage/coverage.c b/ext/coverage/coverage.c
-index 529fac2..fa5f0d8 100644
+index 529fac2..30c8c2b 100644
 --- a/ext/coverage/coverage.c
 +++ b/ext/coverage/coverage.c
 @@ -15,20 +15,35 @@ static VALUE rb_coverages = Qundef;
@@ -98,11 +98,13 @@ index 529fac2..fa5f0d8 100644
      return ncoverages;
  }
  
-@@ -102,6 +135,6 @@ Init_coverage(void)
+@@ -101,7 +134,7 @@ void
+ Init_coverage(void)
  {
      VALUE rb_mCoverage = rb_define_module("Coverage");
-     rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, 0);
+-    rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, 0);
 -    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, 0);
++    rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, -1);
 +    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, -1);
      rb_gc_register_address(&rb_coverages);
  }
@@ -164,7 +166,7 @@ index dbb10fd..e6ed86e 100644
      return 0;
  }
 diff --git a/thread.c b/thread.c
-index 5b8bc5f..77f3bdc 100644
+index 5b8bc5f..899ce4e 100644
 --- a/thread.c
 +++ b/thread.c
 @@ -4837,6 +4837,12 @@ update_coverage(rb_event_flag_t event, VALUE proc, VALUE self, ID id, VALUE klas
@@ -206,7 +208,7 @@ index 5b8bc5f..77f3bdc 100644
 +{
 +    VALUE cover_files = rb_get_cover_files();
 +
-+    if (NIL_P(cover_files) || rb_ary_includes(cover_files, file) == Qtrue) {
++    if (NIL_P(cover_files) || (RTEST(cover_files) && rb_ary_includes(cover_files, file) == Qtrue)) {
 +        return 1;
 +    }
 +

@@ -1,10 +1,10 @@
 module Halogen
   class Railtie < Rails::Railtie
-    config.before_eager_load do
+    config.before_initialize do
       Coverage.start
     end
 
-    config.before_initialize do
+    config.after_initialize do
       Coverage.result(:retain => true)
     end
   end
