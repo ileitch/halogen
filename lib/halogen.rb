@@ -12,7 +12,9 @@ if defined? Rails
 end
 
 module Halogen
-  attr_accessor :enabled
+  class << self
+    attr_accessor :enabled
+  end
 
   def self.config
     @config ||= Configuration.new
@@ -44,7 +46,7 @@ module Halogen
     end
   end
 
-  def self.ensure_compatability
+  def self.check_compatability
     if Coverage.method(:result).arity == 0
       Rails.logger.error("Your Ruby version does not support retaining coverage results. Halogen is disabled.")
       Halogen.enabled = false
