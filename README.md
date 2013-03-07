@@ -46,6 +46,6 @@ TODO: Write usage instructions here
 4. Push to the branch (`git push origin my-new-feature`)
 5. Create new Pull Request
 
-### Copyright
+## Copyright
 
 Copyright (c) 2013 Ian Leitch, LivingSocial, Inc. See LICENSE for details.

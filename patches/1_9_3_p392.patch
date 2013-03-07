@@ -165,6 +165,121 @@ index dbb10fd..e6ed86e 100644
      }
      return 0;
  }
+diff --git a/test/coverage/test_coverage.rb b/test/coverage/test_coverage.rb
+index 4d785c3..8edf86e 100644
+--- a/test/coverage/test_coverage.rb
++++ b/test/coverage/test_coverage.rb
+@@ -16,18 +16,22 @@ class TestCoverage < Test::Unit::TestCase
+     end
+   end
+ 
++  def write_test_file
++    File.open("test.rb", "w") do |f|
++      f.puts <<-EOS
++        def coverage_test_method
++          :ok
++        end
++      EOS
++    end
++  end
++
+   def test_restarting_coverage
+     loaded_features = $".dup
+ 
+     Dir.mktmpdir {|tmp|
+       Dir.chdir(tmp) {
+-        File.open("test.rb", "w") do |f|
+-          f.puts <<-EOS
+-            def coverage_test_method
+-              :ok
+-            end
+-          EOS
+-        end
++        write_test_file
+ 
+         Coverage.start
+         require tmp + '/test.rb'
+@@ -41,6 +45,80 @@ class TestCoverage < Test::Unit::TestCase
+     $".replace loaded_features
+   end
+ 
++  def test_restarting_coverage_with_retain_true
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert_equal 1, Coverage.result(:retain => true)[tmp + '/test.rb'][1]
++        Coverage.start
++        coverage_test_method
++        assert_equal 1, Coverage.result[tmp + '/test.rb'][1]
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_restarting_coverage_with_retain_false
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert_equal 1, Coverage.result(:retain => false)[tmp + '/test.rb'][1]
++        Coverage.start
++        coverage_test_method
++        assert_equal 0, Coverage.result[tmp + '/test.rb'][1]
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_coverage_with_matching_restricted_file
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start([tmp + '/test.rb'])
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert Coverage.result.key?(tmp + '/test.rb')
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_coverage_without_matching_restricted_file
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start(['foo.rb'])
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert !Coverage.result.key?(tmp + '/test.rb')
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
+   def test_big_code
+     loaded_features = $".dup
+ 
 diff --git a/thread.c b/thread.c
 index 5b8bc5f..899ce4e 100644
 --- a/thread.c
