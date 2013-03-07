@@ -27,14 +27,15 @@ TODO: Graph, single servers, frequency.
 
 First you need to install CRuby with the Halogen patch applied.
 
-### rvm
+* rvm
 
 ```
 $ wget "https://github.com/ileitch/halogen/blob/master/patches/1_9_3_p392.patch"
 $ rvm install ruby-1.9.3-p392 -n halogen --patch 1_9_3_p392.patch
+$ rvm use ruby-1.9.3-p392-halogen
 ```
 
-### ruby-build
+* ruby-build
 
 ```
 $ wget "https://github.com/ileitch/halogen/blob/master/ruby-build/1.9.3-p392-halogen"
@@ -49,9 +50,9 @@ Add Halogen to your Gemfile:
 
 ### Rails
 
-`app/controllers/application_controller.rb`
-
 ```ruby
+# app/controllers/application_controller.rb
+
 class ApplicationController
   require Halogen::RailsFilter
 end
@@ -61,9 +62,9 @@ Note: You should include this at the very top of the class.
 
 ## Configuration
 
-`config/initializers/halogen.rb`
-
 ```ruby
+# config/initializers/halogen.rb
+
 Halogen.configure do |config|
   # Perform coverage on every 500th request.
   config.frequency = 500
