@@ -1,20 +1,48 @@
 diff --git a/ext/coverage/coverage.c b/ext/coverage/coverage.c
-index 529fac2..31b6662 100644
+index 529fac2..fa5f0d8 100644
 --- a/ext/coverage/coverage.c
 +++ b/ext/coverage/coverage.c
-@@ -27,8 +27,10 @@ rb_coverage_start(VALUE klass)
+@@ -15,20 +15,35 @@ static VALUE rb_coverages = Qundef;
+ 
+ /*
+  * call-seq:
+- *    Coverage.start  => nil
++ *    Coverage.start                    => nil
++ *    Coverage.start(['a.rb', 'b.rb'])  => nil
+  *
+- * Enables coverage measurement.
++ * Enables coverage measurement. If an array of files is given, 'trace'
++ * instructions will only be included for those files.
+  */
+ static VALUE
+-rb_coverage_start(VALUE klass)
++rb_coverage_start(int argc, VALUE *argv, VALUE klass)
+ {
++    VALUE cover_files;
++
+     if (!RTEST(rb_get_coverages())) {
+ 	if (rb_coverages == Qundef) {
  	    rb_coverages = rb_hash_new();
  	    RBASIC(rb_coverages)->klass = 0;
  	}
 -	rb_set_coverages(rb_coverages);
      }
 +
++    rb_scan_args(argc, argv, "01", &cover_files);
++
++    if (!NIL_P(cover_files)) {
++        Check_Type(cover_files, T_ARRAY);
++        rb_set_cover_files(cover_files);
++    } else {
++        rb_set_cover_files(Qnil);
++    }
++
 +    rb_set_coverages(rb_coverages);
 +
      return Qnil;
  }
  
-@@ -39,7 +41,6 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+@@ -39,7 +54,6 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
      VALUE coverage = (VALUE)val;
      VALUE coverages = (VALUE)h;
      coverage = rb_ary_dup(coverage);
@@ -22,8 +50,19 @@ index 529fac2..31b6662 100644
      rb_ary_freeze(coverage);
      rb_hash_aset(coverages, path, coverage);
      return ST_CONTINUE;
-@@ -53,16 +54,31 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
-  * and disables coverage measurement.
+@@ -47,22 +61,41 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+ 
+ /*
+  *  call-seq:
+- *     Coverage.result  => hash
++ *     Coverage.result                   => hash
++ *     Coverage.result(:retain => true)  => hash
+  *
+  * Returns a hash that contains filename as key and coverage array as value
+- * and disables coverage measurement.
++ * and disables coverage measurement. If the :retain => true option is given
++ * the coverage array is not removed and the values are reset to 0. This
++ * allows you to run Coverage.start again and get new execution results.
   */
  static VALUE
 -rb_coverage_result(VALUE klass)
@@ -55,10 +94,11 @@ index 529fac2..31b6662 100644
      rb_hash_freeze(ncoverages);
 -    rb_reset_coverages();
 +    rb_reset_coverages(retain);
++    rb_set_cover_files(Qnil);
      return ncoverages;
  }
  
-@@ -102,6 +118,6 @@ Init_coverage(void)
+@@ -102,6 +135,6 @@ Init_coverage(void)
  {
      VALUE rb_mCoverage = rb_define_module("Coverage");
      rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, 0);
@@ -66,8 +106,21 @@ index 529fac2..31b6662 100644
 +    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, -1);
      rb_gc_register_address(&rb_coverages);
  }
+diff --git a/internal.h b/internal.h
+index 59c9284..548db03 100644
+--- a/internal.h
++++ b/internal.h
+@@ -179,6 +179,8 @@ void rb_thread_execute_interrupts(VALUE th);
+ void rb_clear_trace_func(void);
+ VALUE rb_thread_backtrace(VALUE thval);
+ VALUE rb_get_coverages(void);
++int rb_coverage_enabled(void);
++int rb_should_cover_file(VALUE file);
+ 
+ /* thread_pthread.c, thread_win32.c */
+ void Init_native_thread(void);
 diff --git a/iseq.c b/iseq.c
-index 721277a..42272aa 100644
+index 721277a..3ae7384 100644
 --- a/iseq.c
 +++ b/iseq.c
 @@ -276,7 +276,7 @@ prepare_iseq_build(rb_iseq_t *iseq,
@@ -75,15 +128,59 @@ index 721277a..42272aa 100644
      if (!GET_THREAD()->parse_in_eval) {
  	VALUE coverages = rb_get_coverages();
 -	if (RTEST(coverages)) {
-+	if (GET_VM()->coverage_enabled && RTEST(coverages)) {
++	if (rb_coverage_enabled() && RTEST(coverages)) {
  	    iseq->coverage = rb_hash_lookup(coverages, filename);
  	    if (NIL_P(iseq->coverage)) iseq->coverage = Qfalse;
  	}
+diff --git a/parse.y b/parse.y
+index dbb10fd..e6ed86e 100644
+--- a/parse.y
++++ b/parse.y
+@@ -5168,15 +5168,17 @@ static VALUE
+ coverage(const char *f, int n)
+ {
+     VALUE coverages = rb_get_coverages();
+-    if (RTEST(coverages) && RBASIC(coverages)->klass == 0) {
+-	VALUE fname = rb_external_str_new_with_enc(f, strlen(f), rb_filesystem_encoding());
+-	VALUE lines = rb_ary_new2(n);
+-	int i;
+-	RBASIC(lines)->klass = 0;
+-	for (i = 0; i < n; i++) RARRAY_PTR(lines)[i] = Qnil;
+-	RARRAY(lines)->as.heap.len = n;
+-	rb_hash_aset(coverages, fname, lines);
+-	return lines;
++    if (rb_coverage_enabled() && RTEST(coverages) && RBASIC(coverages)->klass == 0) {
++        VALUE fname = rb_external_str_new_with_enc(f, strlen(f), rb_filesystem_encoding());
++        if (rb_should_cover_file(fname)) {
++            VALUE lines = rb_ary_new2(n);
++            int i;
++            RBASIC(lines)->klass = 0;
++            for (i = 0; i < n; i++) RARRAY_PTR(lines)[i] = Qnil;
++            RARRAY(lines)->as.heap.len = n;
++            rb_hash_aset(coverages, fname, lines);
++            return lines;
++        }
+     }
+     return 0;
+ }
 diff --git a/thread.c b/thread.c
-index 5b8bc5f..88cb232 100644
+index 5b8bc5f..77f3bdc 100644
 --- a/thread.c
 +++ b/thread.c
-@@ -4847,13 +4847,20 @@ void
+@@ -4837,6 +4837,12 @@ update_coverage(rb_event_flag_t event, VALUE proc, VALUE self, ID id, VALUE klas
+     }
+ }
+ 
++int
++rb_coverage_enabled(void)
++{
++    return GET_VM()->coverage_enabled == 1;
++}
++
+ VALUE
+ rb_get_coverages(void)
+ {
+@@ -4847,13 +4853,44 @@ void
  rb_set_coverages(VALUE coverages)
  {
      GET_VM()->coverages = coverages;
@@ -93,6 +190,30 @@ index 5b8bc5f..88cb232 100644
  
  void
 -rb_reset_coverages(void)
++rb_set_cover_files(VALUE files)
++{
++    GET_VM()->cover_files = files;
++}
++
++VALUE
++rb_get_cover_files(void)
++{
++    return GET_VM()->cover_files;
++}
++
++int
++rb_should_cover_file(VALUE file)
++{
++    VALUE cover_files = rb_get_cover_files();
++
++    if (NIL_P(cover_files) || rb_ary_includes(cover_files, file) == Qtrue) {
++        return 1;
++    }
++
++    return 0;
++}
++
++void
 +rb_reset_coverages(int retain)
  {
 -    GET_VM()->coverages = Qfalse;
@@ -107,23 +228,29 @@ index 5b8bc5f..88cb232 100644
  }
  
 diff --git a/vm_core.h b/vm_core.h
-index dfc0e3c..5d3cf32 100644
+index dfc0e3c..5e3e493 100644
 --- a/vm_core.h
 +++ b/vm_core.h
-@@ -315,6 +315,7 @@ typedef struct rb_vm_struct {
+@@ -315,6 +315,8 @@ typedef struct rb_vm_struct {
  
      VALUE verbose, debug, progname;
      VALUE coverages;
 +    int coverage_enabled;
++    VALUE cover_files;
  
      struct unlinked_method_entry_list_entry *unlinked_method_entry_list;
  
-@@ -754,7 +755,7 @@ int rb_thread_check_trap_pending(void);
+@@ -752,9 +754,12 @@ rb_threadptr_exec_event_hooks(rb_thread_t *th, rb_event_flag_t flag, VALUE self,
  
+ int rb_thread_check_trap_pending(void);
+ 
++extern int rb_coverage_enabled(void);
  extern VALUE rb_get_coverages(void);
  extern void rb_set_coverages(VALUE);
 -extern void rb_reset_coverages(void);
 +extern void rb_reset_coverages(int);
++extern void rb_set_cover_files(VALUE);
++extern VALUE rb_get_cover_files(void);
  
  #if defined __GNUC__ && __GNUC__ >= 4
  #pragma GCC visibility pop
