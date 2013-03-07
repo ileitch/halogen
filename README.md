@@ -13,6 +13,9 @@ instructions which the Coverage module then listens for. CRuby does not currentl
 support starting, stopping and starting again coverage for a previously required
 file. Halogen's patch adds the ability to retain coverage results between runs.
 
+With this patch applied, Halogen can enable coverage for a percentage
+of your requests and gradually build a coverage report.
+
 ## Performance
 
 Coverage does not come for free in CRuby. The presence of the extra 'trace'
@@ -22,21 +25,57 @@ TODO: Graph, single servers, frequency.
 
 ## Installation
 
-Add this line to your application's Gemfile:
+First you need to install CRuby with the Halogen patch applied.
+
+### rvm
+
+```
+$ wget "https://github.com/ileitch/halogen/blob/master/patches/1_9_3_p392.patch"
+$ rvm install ruby-1.9.3-p392 -n halogen --patch 1_9_3_p392.patch
+```
+
+### ruby-build
+
+```
+$ wget "https://github.com/ileitch/halogen/blob/master/ruby-build/1.9.3-p392-halogen"
+$ ruby-build install 1.9.3-p392-halogen
+```
+
+Add Halogen to your Gemfile:
 
     gem 'halogen'
 
-And then execute:
-
-    $ bundle
-
-Or install it yourself as:
-
-    $ gem install halogen
-
 ## Usage
 
-TODO: Write usage instructions here
+### Rails
+
+`app/controllers/application_controller.rb`
+
+```ruby
+class ApplicationController
+  require Halogen::RailsFilter
+end
+```
+
+Note: You should include this at the very top of the class.
+
+## Configuration
+
+`config/initializers/halogen.rb`
+
+```ruby
+Halogen.configure do |config|
+  # Perform coverage on every 500th request.
+  config.frequency = 500
+
+  # Dispatch report complication job over Resque.
+  # Options are :resque, :sidekiq and :thread.
+  config.dispatcher = :resque
+
+  # Path on disk to write the coverage report.
+  config.coverage_path = '/tmp/app_coverage'
+end
+```
 
 ## Contributing
 
