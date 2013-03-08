@@ -54,7 +54,7 @@ Add Halogen to your Gemfile:
 # app/controllers/application_controller.rb
 
 class ApplicationController
-  require Halogen::RailsFilter
+  include Halogen::RailsFilter
 end
 ```
 

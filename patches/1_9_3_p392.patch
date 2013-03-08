@@ -1,8 +1,12 @@
 diff --git a/ext/coverage/coverage.c b/ext/coverage/coverage.c
-index 529fac2..30c8c2b 100644
+index 529fac2..40dc473 100644
 --- a/ext/coverage/coverage.c
 +++ b/ext/coverage/coverage.c
-@@ -15,20 +15,35 @@ static VALUE rb_coverages = Qundef;
+@@ -12,23 +12,39 @@
+ #include "vm_core.h"
+ 
+ static VALUE rb_coverages = Qundef;
++static int rb_retain_coverages = 0;
  
  /*
   * call-seq:
@@ -42,15 +46,18 @@ index 529fac2..30c8c2b 100644
      return Qnil;
  }
  
-@@ -39,7 +54,6 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+@@ -39,30 +55,50 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
      VALUE coverage = (VALUE)val;
      VALUE coverages = (VALUE)h;
      coverage = rb_ary_dup(coverage);
 -    rb_ary_clear((VALUE)val);
      rb_ary_freeze(coverage);
++    if (!rb_retain_coverages) {
++        rb_ary_clear((VALUE)val);
++    }
      rb_hash_aset(coverages, path, coverage);
      return ST_CONTINUE;
-@@ -47,22 +61,41 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+ }
  
  /*
   *  call-seq:
@@ -73,15 +80,14 @@ index 529fac2..30c8c2b 100644
 +    VALUE options;
 +    VALUE coverages;
 +    VALUE ncoverages;
-+    int retain;
 +
-+    retain = 0;
++    rb_retain_coverages = 0;
 +    rb_scan_args(argc, argv, "01", &options);
 +
 +    if (!NIL_P(options)) {
 +        Check_Type(options, T_HASH);
 +        if (rb_hash_aref(options, ID2SYM(rb_intern("retain"))) == Qtrue) {
-+            retain = 1;
++            rb_retain_coverages = 1;
 +        }
 +    }
 +
@@ -93,12 +99,12 @@ index 529fac2..30c8c2b 100644
      st_foreach(RHASH_TBL(coverages), coverage_result_i, ncoverages);
      rb_hash_freeze(ncoverages);
 -    rb_reset_coverages();
-+    rb_reset_coverages(retain);
++    rb_reset_coverages(rb_retain_coverages);
 +    rb_set_cover_files(Qnil);
      return ncoverages;
  }
  
-@@ -101,7 +134,7 @@ void
+@@ -101,7 +137,7 @@ void
  Init_coverage(void)
  {
      VALUE rb_mCoverage = rb_define_module("Coverage");
@@ -166,7 +172,7 @@ index dbb10fd..e6ed86e 100644
      return 0;
  }
 diff --git a/test/coverage/test_coverage.rb b/test/coverage/test_coverage.rb
-index 4d785c3..8edf86e 100644
+index 4d785c3..0126202 100644
 --- a/test/coverage/test_coverage.rb
 +++ b/test/coverage/test_coverage.rb
 @@ -16,18 +16,22 @@ class TestCoverage < Test::Unit::TestCase
@@ -236,7 +242,7 @@ index 4d785c3..8edf86e 100644
 +        assert_equal 1, Coverage.result(:retain => false)[tmp + '/test.rb'][1]
 +        Coverage.start
 +        coverage_test_method
-+        assert_equal 0, Coverage.result[tmp + '/test.rb'][1]
++        assert_equal 0, Coverage.result[tmp + '/test.rb'].size
 +      }
 +    }
 +  ensure
@@ -281,7 +287,7 @@ index 4d785c3..8edf86e 100644
      loaded_features = $".dup
  
 diff --git a/thread.c b/thread.c
-index 5b8bc5f..899ce4e 100644
+index 5b8bc5f..3b9d043 100644
 --- a/thread.c
 +++ b/thread.c
 @@ -4837,6 +4837,12 @@ update_coverage(rb_event_flag_t event, VALUE proc, VALUE self, ID id, VALUE klas
@@ -297,7 +303,7 @@ index 5b8bc5f..899ce4e 100644
  VALUE
  rb_get_coverages(void)
  {
-@@ -4847,13 +4853,44 @@ void
+@@ -4847,13 +4853,48 @@ void
  rb_set_coverages(VALUE coverages)
  {
      GET_VM()->coverages = coverages;
@@ -323,7 +329,11 @@ index 5b8bc5f..899ce4e 100644
 +{
 +    VALUE cover_files = rb_get_cover_files();
 +
-+    if (NIL_P(cover_files) || (RTEST(cover_files) && rb_ary_includes(cover_files, file) == Qtrue)) {
++    if (NIL_P(cover_files)) {
++        return 1;
++    }
++
++    if (TYPE(cover_files) == T_ARRAY && rb_ary_includes(cover_files, file) == Qtrue) {
 +        return 1;
 +    }
 +
