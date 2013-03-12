@@ -5,7 +5,8 @@ module Halogen
     end
 
     config.after_initialize do
-      Coverage.result(:retain => true)
+      result = Coverage.result(:retain => true)
+      Halogen.dispatch(result)
     end
   end
 end

@@ -1,4 +1,6 @@
 require 'coverage'
+require 'simplecov_without_defaults'
+require 'simplecov-html'
 
 require 'halogen/version'
 require 'halogen/configuration'
@@ -6,7 +8,7 @@ require 'halogen/dispatcher'
 require 'halogen/dispatcher/resque'
 require 'halogen/dispatcher/thread'
 
-if defined? Rails
+if defined? Rails::Railtie
   require 'halogen/railtie'
   require 'halogen/rails_filter'
 end
