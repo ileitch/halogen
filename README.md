@@ -30,7 +30,7 @@ First you need to install CRuby with the Halogen patch applied.
 * rvm
 
 ```
-$ wget "https://github.com/ileitch/halogen/blob/master/patches/1_9_3_p392.patch"
+$ wget "https://raw.github.com/ileitch/halogen/master/patches/1_9_3_p392.patch"
 $ rvm install ruby-1.9.3-p392 -n halogen --patch 1_9_3_p392.patch
 $ rvm use ruby-1.9.3-p392-halogen
 ```
@@ -38,7 +38,7 @@ $ rvm use ruby-1.9.3-p392-halogen
 * ruby-build
 
 ```
-$ wget "https://github.com/ileitch/halogen/blob/master/ruby-build/1.9.3-p392-halogen"
+$ wget "https://raw.github.com/ileitch/halogen/master/ruby-build/1.9.3-p392-cov"
 $ ruby-build install 1.9.3-p392-halogen
 ```
 
