@@ -38,7 +38,7 @@ $ rvm use ruby-1.9.3-p392-halogen
 * ruby-build
 
 ```
-$ wget "https://raw.github.com/ileitch/halogen/master/ruby-build/1.9.3-p392-cov"
+$ wget "https://raw.github.com/ileitch/halogen/master/ruby-build/1.9.3-p392-halogen"
 $ ruby-build install 1.9.3-p392-halogen
 ```
 
