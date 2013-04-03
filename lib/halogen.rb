@@ -1,5 +1,5 @@
 require 'coverage'
-require 'simplecov_without_defaults'
+require 'simplecov/no_defaults'
 require 'simplecov-html'
 
 require 'halogen/version'

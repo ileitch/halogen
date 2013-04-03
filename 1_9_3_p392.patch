@@ -1,0 +1,383 @@
+diff --git a/ext/coverage/coverage.c b/ext/coverage/coverage.c
+index 529fac2..40dc473 100644
+--- a/ext/coverage/coverage.c
++++ b/ext/coverage/coverage.c
+@@ -12,23 +12,39 @@
+ #include "vm_core.h"
+ 
+ static VALUE rb_coverages = Qundef;
++static int rb_retain_coverages = 0;
+ 
+ /*
+  * call-seq:
+- *    Coverage.start  => nil
++ *    Coverage.start                    => nil
++ *    Coverage.start(['a.rb', 'b.rb'])  => nil
+  *
+- * Enables coverage measurement.
++ * Enables coverage measurement. If an array of files is given, 'trace'
++ * instructions will only be included for those files.
+  */
+ static VALUE
+-rb_coverage_start(VALUE klass)
++rb_coverage_start(int argc, VALUE *argv, VALUE klass)
+ {
++    VALUE cover_files;
++
+     if (!RTEST(rb_get_coverages())) {
+ 	if (rb_coverages == Qundef) {
+ 	    rb_coverages = rb_hash_new();
+ 	    RBASIC(rb_coverages)->klass = 0;
+ 	}
+-	rb_set_coverages(rb_coverages);
+     }
++
++    rb_scan_args(argc, argv, "01", &cover_files);
++
++    if (!NIL_P(cover_files)) {
++        Check_Type(cover_files, T_ARRAY);
++        rb_set_cover_files(cover_files);
++    } else {
++        rb_set_cover_files(Qnil);
++    }
++
++    rb_set_coverages(rb_coverages);
++
+     return Qnil;
+ }
+ 
+@@ -39,30 +55,50 @@ coverage_result_i(st_data_t key, st_data_t val, st_data_t h)
+     VALUE coverage = (VALUE)val;
+     VALUE coverages = (VALUE)h;
+     coverage = rb_ary_dup(coverage);
+-    rb_ary_clear((VALUE)val);
+     rb_ary_freeze(coverage);
++    if (!rb_retain_coverages) {
++        rb_ary_clear((VALUE)val);
++    }
+     rb_hash_aset(coverages, path, coverage);
+     return ST_CONTINUE;
+ }
+ 
+ /*
+  *  call-seq:
+- *     Coverage.result  => hash
++ *     Coverage.result                   => hash
++ *     Coverage.result(:retain => true)  => hash
+  *
+  * Returns a hash that contains filename as key and coverage array as value
+- * and disables coverage measurement.
++ * and disables coverage measurement. If the :retain => true option is given
++ * the coverage array is not removed and the values are reset to 0. This
++ * allows you to run Coverage.start again and get new execution results.
+  */
+ static VALUE
+-rb_coverage_result(VALUE klass)
++rb_coverage_result(int argc, VALUE *argv)
+ {
+-    VALUE coverages = rb_get_coverages();
+-    VALUE ncoverages = rb_hash_new();
++    VALUE options;
++    VALUE coverages;
++    VALUE ncoverages;
++
++    rb_retain_coverages = 0;
++    rb_scan_args(argc, argv, "01", &options);
++
++    if (!NIL_P(options)) {
++        Check_Type(options, T_HASH);
++        if (rb_hash_aref(options, ID2SYM(rb_intern("retain"))) == Qtrue) {
++            rb_retain_coverages = 1;
++        }
++    }
++
++    coverages = rb_get_coverages();
++    ncoverages = rb_hash_new();
+     if (!RTEST(coverages)) {
+ 	rb_raise(rb_eRuntimeError, "coverage measurement is not enabled");
+     }
+     st_foreach(RHASH_TBL(coverages), coverage_result_i, ncoverages);
+     rb_hash_freeze(ncoverages);
+-    rb_reset_coverages();
++    rb_reset_coverages(rb_retain_coverages);
++    rb_set_cover_files(Qnil);
+     return ncoverages;
+ }
+ 
+@@ -101,7 +137,7 @@ void
+ Init_coverage(void)
+ {
+     VALUE rb_mCoverage = rb_define_module("Coverage");
+-    rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, 0);
+-    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, 0);
++    rb_define_module_function(rb_mCoverage, "start", rb_coverage_start, -1);
++    rb_define_module_function(rb_mCoverage, "result", rb_coverage_result, -1);
+     rb_gc_register_address(&rb_coverages);
+ }
+diff --git a/internal.h b/internal.h
+index 59c9284..548db03 100644
+--- a/internal.h
++++ b/internal.h
+@@ -179,6 +179,8 @@ void rb_thread_execute_interrupts(VALUE th);
+ void rb_clear_trace_func(void);
+ VALUE rb_thread_backtrace(VALUE thval);
+ VALUE rb_get_coverages(void);
++int rb_coverage_enabled(void);
++int rb_should_cover_file(VALUE file);
+ 
+ /* thread_pthread.c, thread_win32.c */
+ void Init_native_thread(void);
+diff --git a/iseq.c b/iseq.c
+index 721277a..3ae7384 100644
+--- a/iseq.c
++++ b/iseq.c
+@@ -276,7 +276,7 @@ prepare_iseq_build(rb_iseq_t *iseq,
+     iseq->coverage = Qfalse;
+     if (!GET_THREAD()->parse_in_eval) {
+ 	VALUE coverages = rb_get_coverages();
+-	if (RTEST(coverages)) {
++	if (rb_coverage_enabled() && RTEST(coverages)) {
+ 	    iseq->coverage = rb_hash_lookup(coverages, filename);
+ 	    if (NIL_P(iseq->coverage)) iseq->coverage = Qfalse;
+ 	}
+diff --git a/parse.y b/parse.y
+index dbb10fd..e6ed86e 100644
+--- a/parse.y
++++ b/parse.y
+@@ -5168,15 +5168,17 @@ static VALUE
+ coverage(const char *f, int n)
+ {
+     VALUE coverages = rb_get_coverages();
+-    if (RTEST(coverages) && RBASIC(coverages)->klass == 0) {
+-	VALUE fname = rb_external_str_new_with_enc(f, strlen(f), rb_filesystem_encoding());
+-	VALUE lines = rb_ary_new2(n);
+-	int i;
+-	RBASIC(lines)->klass = 0;
+-	for (i = 0; i < n; i++) RARRAY_PTR(lines)[i] = Qnil;
+-	RARRAY(lines)->as.heap.len = n;
+-	rb_hash_aset(coverages, fname, lines);
+-	return lines;
++    if (rb_coverage_enabled() && RTEST(coverages) && RBASIC(coverages)->klass == 0) {
++        VALUE fname = rb_external_str_new_with_enc(f, strlen(f), rb_filesystem_encoding());
++        if (rb_should_cover_file(fname)) {
++            VALUE lines = rb_ary_new2(n);
++            int i;
++            RBASIC(lines)->klass = 0;
++            for (i = 0; i < n; i++) RARRAY_PTR(lines)[i] = Qnil;
++            RARRAY(lines)->as.heap.len = n;
++            rb_hash_aset(coverages, fname, lines);
++            return lines;
++        }
+     }
+     return 0;
+ }
+diff --git a/test/coverage/test_coverage.rb b/test/coverage/test_coverage.rb
+index 4d785c3..0126202 100644
+--- a/test/coverage/test_coverage.rb
++++ b/test/coverage/test_coverage.rb
+@@ -16,18 +16,22 @@ class TestCoverage < Test::Unit::TestCase
+     end
+   end
+ 
++  def write_test_file
++    File.open("test.rb", "w") do |f|
++      f.puts <<-EOS
++        def coverage_test_method
++          :ok
++        end
++      EOS
++    end
++  end
++
+   def test_restarting_coverage
+     loaded_features = $".dup
+ 
+     Dir.mktmpdir {|tmp|
+       Dir.chdir(tmp) {
+-        File.open("test.rb", "w") do |f|
+-          f.puts <<-EOS
+-            def coverage_test_method
+-              :ok
+-            end
+-          EOS
+-        end
++        write_test_file
+ 
+         Coverage.start
+         require tmp + '/test.rb'
+@@ -41,6 +45,80 @@ class TestCoverage < Test::Unit::TestCase
+     $".replace loaded_features
+   end
+ 
++  def test_restarting_coverage_with_retain_true
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert_equal 1, Coverage.result(:retain => true)[tmp + '/test.rb'][1]
++        Coverage.start
++        coverage_test_method
++        assert_equal 1, Coverage.result[tmp + '/test.rb'][1]
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_restarting_coverage_with_retain_false
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert_equal 1, Coverage.result(:retain => false)[tmp + '/test.rb'][1]
++        Coverage.start
++        coverage_test_method
++        assert_equal 0, Coverage.result[tmp + '/test.rb'].size
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_coverage_with_matching_restricted_file
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start([tmp + '/test.rb'])
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert Coverage.result.key?(tmp + '/test.rb')
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
++  def test_coverage_without_matching_restricted_file
++    loaded_features = $".dup
++
++    Dir.mktmpdir {|tmp|
++      Dir.chdir(tmp) {
++        write_test_file
++
++        Coverage.start(['foo.rb'])
++        require tmp + '/test.rb'
++        coverage_test_method
++        assert !Coverage.result.key?(tmp + '/test.rb')
++      }
++    }
++  ensure
++    $".replace loaded_features
++  end
++
+   def test_big_code
+     loaded_features = $".dup
+ 
+diff --git a/thread.c b/thread.c
+index 5b8bc5f..3b9d043 100644
+--- a/thread.c
++++ b/thread.c
+@@ -4837,6 +4837,12 @@ update_coverage(rb_event_flag_t event, VALUE proc, VALUE self, ID id, VALUE klas
+     }
+ }
+ 
++int
++rb_coverage_enabled(void)
++{
++    return GET_VM()->coverage_enabled == 1;
++}
++
+ VALUE
+ rb_get_coverages(void)
+ {
+@@ -4847,13 +4853,48 @@ void
+ rb_set_coverages(VALUE coverages)
+ {
+     GET_VM()->coverages = coverages;
++    GET_VM()->coverage_enabled = 1;
+     rb_add_event_hook(update_coverage, RUBY_EVENT_COVERAGE, Qnil);
+ }
+ 
+ void
+-rb_reset_coverages(void)
++rb_set_cover_files(VALUE files)
++{
++    GET_VM()->cover_files = files;
++}
++
++VALUE
++rb_get_cover_files(void)
++{
++    return GET_VM()->cover_files;
++}
++
++int
++rb_should_cover_file(VALUE file)
++{
++    VALUE cover_files = rb_get_cover_files();
++
++    if (NIL_P(cover_files)) {
++        return 1;
++    }
++
++    if (TYPE(cover_files) == T_ARRAY && rb_ary_includes(cover_files, file) == Qtrue) {
++        return 1;
++    }
++
++    return 0;
++}
++
++void
++rb_reset_coverages(int retain)
+ {
+-    GET_VM()->coverages = Qfalse;
++    if (retain) {
++        clear_coverage();
++    } else {
++        GET_VM()->coverages = Qfalse;
++    }
++
++    GET_VM()->coverage_enabled = 0;
+     rb_remove_event_hook(update_coverage);
+ }
+ 
+diff --git a/vm_core.h b/vm_core.h
+index dfc0e3c..5e3e493 100644
+--- a/vm_core.h
++++ b/vm_core.h
+@@ -315,6 +315,8 @@ typedef struct rb_vm_struct {
+ 
+     VALUE verbose, debug, progname;
+     VALUE coverages;
++    int coverage_enabled;
++    VALUE cover_files;
+ 
+     struct unlinked_method_entry_list_entry *unlinked_method_entry_list;
+ 
+@@ -752,9 +754,12 @@ rb_threadptr_exec_event_hooks(rb_thread_t *th, rb_event_flag_t flag, VALUE self,
+ 
+ int rb_thread_check_trap_pending(void);
+ 
++extern int rb_coverage_enabled(void);
+ extern VALUE rb_get_coverages(void);
+ extern void rb_set_coverages(VALUE);
+-extern void rb_reset_coverages(void);
++extern void rb_reset_coverages(int);
++extern void rb_set_cover_files(VALUE);
++extern VALUE rb_get_cover_files(void);
+ 
+ #if defined __GNUC__ && __GNUC__ >= 4
+ #pragma GCC visibility pop
