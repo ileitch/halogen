@@ -50,7 +50,7 @@ module Halogen
 
   def self.check_compatability
     if Coverage.method(:result).arity == 0
-      Rails.logger.error("Your Ruby version does not support retaining coverage results. Halogen is disabled.")
+      STDERR.puts("Your Ruby version does not support retaining coverage results. Halogen is disabled.")
       Halogen.enabled = false
     end
   end
