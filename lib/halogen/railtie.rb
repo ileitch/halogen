@@ -1,12 +1,14 @@
 module Halogen
   class Railtie < Rails::Railtie
     config.before_initialize do
-      Coverage.start
+      Coverage.start if Halogen.enabled
     end
 
     config.after_initialize do
-      result = Coverage.result(:retain => true)
-      Halogen.dispatch(result)
+      if Halogen.enabled
+        result = Coverage.result(:retain => true)
+        Halogen.dispatch(result)
+      end
     end
   end
 end
