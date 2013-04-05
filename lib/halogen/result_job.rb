@@ -3,7 +3,7 @@ module Halogen
     def self.perform(result, run_count)
       begin
         SimpleCov.configure do
-          command_name "Halogen-#{run_count}"
+          command_name run_count
           merge_timeout 1.week
           root File.dirname(Halogen.config.coverage_path)
           coverage_dir File.basename(Halogen.config.coverage_path)

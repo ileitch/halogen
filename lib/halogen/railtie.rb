@@ -3,6 +3,7 @@ module Halogen
     config.before_initialize do |app|
 
       if Halogen.enabled
+        # TODO: Need a way to disable for certain ... hosts?
         # TODO: ensure cache_classes enabled.
 
         Halogen.covered_files = app.config.eager_load_paths.map do |load_path|
