@@ -16,7 +16,7 @@ module Halogen
     config.after_initialize do
       if Halogen.enabled
         result = Coverage.result(:retain => true)
-        Halogen.dispatch(result)
+        Halogen.dispatch(result, 0)
       end
     end
   end
