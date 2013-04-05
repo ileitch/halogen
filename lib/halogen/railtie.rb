@@ -1,7 +1,16 @@
 module Halogen
   class Railtie < Rails::Railtie
     config.before_initialize do
-      Coverage.start if Halogen.enabled
+
+      if Halogen.enabled
+        # TODO: ensure cache_classes enabled.
+
+        Halogen.covered_files = app.config.eager_load_paths.map do |load_path|
+          Dir.glob("#{load_path}/**/*.rb").sort
+        end.flatten
+
+        Coverage.start(Halogen.covered_files)
+      end
     end
 
     config.after_initialize do

@@ -13,7 +13,7 @@ module Halogen
     def halogen_cover
       if Halogen.increment_sequence >= Halogen.config.frequency
         Halogen.reset_sequence
-        Coverage.start
+        Coverage.start(Halogen.covered_files)
         begin
           yield
         ensure

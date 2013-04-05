@@ -4,6 +4,7 @@ require 'simplecov-html'
 
 require 'halogen/version'
 require 'halogen/configuration'
+require 'halogen/result_job'
 require 'halogen/dispatcher'
 require 'halogen/dispatcher/resque'
 require 'halogen/dispatcher/thread'
@@ -15,7 +16,7 @@ end
 
 module Halogen
   class << self
-    attr_accessor :enabled
+    attr_accessor :enabled, :covered_files
   end
 
   def self.config
