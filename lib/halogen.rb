@@ -27,9 +27,9 @@ module Halogen
     yield config
   end
 
-  def self.dispatch(result)
+  def self.dispatch(result, run_count)
     begin
-      dispatcher.dispatch(result)
+      dispatcher.dispatch(result, run_count)
     rescue StandardError => e
       Rails.logger.error(e)
       Rails.logger.error(e.backtrace.join("\n"))
@@ -40,12 +40,6 @@ module Halogen
     Thread.exclusive do
       @sequence ||= config.initial_sequence
       @sequence += 1
-    end
-  end
-
-  def self.reset_sequence
-    Thread.exclusive do
-      @sequence = 0
     end
   end
 

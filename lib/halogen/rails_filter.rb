@@ -11,14 +11,14 @@ module Halogen
     protected
 
     def halogen_cover
-      if Halogen.increment_sequence >= Halogen.config.frequency
-        Halogen.reset_sequence
+      seq = Halogen.increment_sequence
+      if seq % Halogen.config.frequency == 0
         Coverage.start(Halogen.covered_files)
         begin
           yield
         ensure
           result = Coverage.result(:retain => true)
-          Halogen.dispatch(result)
+          Halogen.dispatch(result, seq / Halogen.config.frequency)
         end
       else
         yield
