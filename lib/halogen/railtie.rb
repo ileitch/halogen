@@ -1,6 +1,6 @@
 module Halogen
   class Railtie < Rails::Railtie
-    config.before_initialize do
+    config.before_initialize do |app|
 
       if Halogen.enabled
         # TODO: ensure cache_classes enabled.
